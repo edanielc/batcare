@@ -30,7 +30,7 @@ void setup() {
   display.setTextColor(SSD1306_WHITE);
 
   pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, LOW); // Apaga el relay inicialmente (invierte HIGH/LOW según tu relé)
+  digitalWrite(RELAY_PIN, HIGH); // Apaga el relay inicialmente (invierte HIGH/LOW según tu relé)
 }
 
 void loop() {
@@ -43,11 +43,11 @@ void loop() {
   // Control de la bomba con histéresis
   if (!bombaEncendida && rawValue >= UMBRAL_ALTO_ADC) {
     // Encender la bomba si está apagada y el voltaje supera 14V
-    digitalWrite(RELAY_PIN, HIGH); // Activa el relay (cambia LOW/HIGH según tu relé)
+    digitalWrite(RELAY_PIN, LOW); // Activa el relay (cambia LOW/HIGH según tu relé)
     bombaEncendida = true;
   } else if (bombaEncendida && rawValue <= UMBRAL_BAJO_ADC) {
     // Apagar la bomba si está encendida y el voltaje cae por debajo de 11V
-    digitalWrite(RELAY_PIN, LOW); // Desactiva el relay (cambia HIGH/LOW según tu relé)
+    digitalWrite(RELAY_PIN, HIGH); // Desactiva el relay (cambia HIGH/LOW según tu relé)
     bombaEncendida = false;
   }
 
@@ -70,7 +70,7 @@ void loop() {
   display.print("S:");
   display.print(rawValue);
   display.print("|");
-  display.print(bombaEncendida ? "ON" : "OF");
+  display.print(bombaEncendida ? "ON" : "OFF");
 
   display.display(); // Actualizar la pantalla para mostrar los datos
 
