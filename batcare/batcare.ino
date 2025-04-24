@@ -9,10 +9,13 @@
 #include "bomba.h"
 
 // Configuración de Wi-Fi
-//const char* ssid = "R-2G";       // Cambia por el nombre de tu red Wi-Fi
-//const char* password = "KRISANTEMOZ88"; // Cambia por la contraseña de tu red Wi-Fi
-const char* ssid = "BaristaLovers";       // Cambia por el nombre de tu red Wi-Fi
-const char* password = "Baristalovers"; // Cambia por la contraseña de tu red Wi-Fi
+const char* ssid = "R-2G";       // Cambia por el nombre de tu red Wi-Fi
+const char* password = "KRISANTEMOZ88"; // Cambia por la contraseña de tu red Wi-Fi
+
+// Configuración de IP estática
+IPAddress staticIP(192, 168, 1, 5);   // IP estática deseada
+IPAddress gateway(192, 168, 1, 1);    // Puerta de enlace (router)
+IPAddress subnet(255, 255, 255, 0);   // Máscara de subred
 
 // Configuración NTP
 WiFiUDP ntpUDP;
@@ -24,6 +27,9 @@ bool mostrarWiFi = true;          // Controla qué pantalla se muestra
 void setup() {
   Serial.begin(115200); // Inicializar comunicación serial
 
+  // Configurar IP estática
+  WiFi.config(staticIP, gateway, subnet);
+
   // Inicializar Wi-Fi
   WiFi.begin(ssid, password);
   Serial.print("Conectando a Wi-Fi...");
@@ -32,6 +38,10 @@ void setup() {
     Serial.print(".");
   }
   Serial.println("\nConectado a Wi-Fi");
+
+  // Mostrar la IP asignada
+  Serial.print("Dirección IP asignada: ");
+  Serial.println(WiFi.localIP());
 
   // Inicializar cliente NTP
   timeClient.begin();
@@ -88,5 +98,5 @@ void loop() {
   // Manejar solicitudes del servidor web
   handleWebServer(voltage, rawValue, bombaEncendida);
 
-  delay(1000); // Esperar 1 segundo antes de la próxima lectura
+  delay(1000); // Retardo de 1 segundo
 }

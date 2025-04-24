@@ -13,24 +13,7 @@ void setupOLED() {
   display.setTextColor(SSD1306_WHITE);
 }
 
-void mostrarPantallaWiFi() {
-  // Pantalla 1: Estado del Wi-Fi y calidad de la señal
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.print("WiFi: ");
-  display.println(WiFi.SSID());
-  display.setCursor(0, 10);
-  display.print("IP: ");
-  display.println(WiFi.localIP());
-  display.setCursor(0, 20);
-  display.print("RSSI: ");
-  display.print(WiFi.RSSI());
-  display.print(" dBm");
-  display.display();
-}
-
 void mostrarDatosEnOLED(float voltage, int rawValue, bool bombaEncendida, int hora, int minutos) {
-  // Pantalla 2: Voltaje, valor ADC, estado de la bomba y hora actual
   display.clearDisplay();
   display.setCursor(0, 0);
   display.print("V:");
@@ -48,5 +31,20 @@ void mostrarDatosEnOLED(float voltage, int rawValue, bool bombaEncendida, int ho
   display.print(hora);
   display.print(":");
   display.print(minutos);
+  display.display();
+}
+
+void mostrarPantallaWiFi() {
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.print("WiFi: ");
+  display.println(WiFi.SSID());
+  display.setCursor(0, 10);
+  display.print("IP: ");
+  display.println(WiFi.localIP());
+  display.setCursor(0, 20);
+  display.print("RSSI: ");
+  display.print(WiFi.RSSI());
+  display.print(" dBm");
   display.display();
 }

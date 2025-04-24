@@ -1,5 +1,5 @@
 #include "bomba.h"
-#include <Arduino.h> // Incluye Arduino.h para funciones como pinMode y digitalWrite
+#include <Arduino.h>
 
 #define RELAY_PIN 14 // GPIO14 (equivalente a D5 en NodeMCU)
 #define UMBRAL_ALTO_ADC 805
