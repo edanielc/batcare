@@ -4,7 +4,7 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include "config.h"   // <-- credenciales wifi
+#include "wifi_config.h"   // <-- credenciales wifi
 
 // Configuración OLED
 #define SCREEN_WIDTH 128
