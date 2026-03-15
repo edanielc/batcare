@@ -17,10 +17,10 @@ const uint8_t RELAY_PIN = D5;
 const uint8_t ADC_PIN = A0;
 
 // Umbrales
-const uint16_t UMBRAL_ALTO = 805;    // 14.1V
-const uint16_t UMBRAL_BAJO = 750;    // 11V
+const uint16_t UMBRAL_ALTO = 808;    // 14.1V
+const uint16_t UMBRAL_BAJO = 660;    // 750 - 11V
 const uint8_t HISTERESIS = 10;
-const uint32_t PAUSA_MS = 240000;    // 4 minutos en ms
+const uint32_t PAUSA_MS = 780000;    // 13 minutos en ms
 
 // Configuración NTP
 const char* ntpServer = "time.google.com";
@@ -224,6 +224,7 @@ String generarPaginaWeb() {
 }
 
 void setup() {
+  delay(1000);
   Serial.begin(115200);
   
   // Inicializar OLED
