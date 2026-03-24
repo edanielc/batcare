@@ -4,6 +4,7 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <EEPROM.h>
 #include "wifi_config.h"   // <-- credenciales wifi
 
 // Configuración OLED
@@ -16,16 +17,26 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 const uint8_t RELAY_PIN = D5;
 const uint8_t ADC_PIN = A0;
 
-// Umbrales
-const uint16_t UMBRAL_ALTO = 808;    // 14.1V
-const uint16_t UMBRAL_BAJO = 660;    // 750 - 11V
-const uint8_t HISTERESIS = 10;
-const uint32_t PAUSA_MS = 780000;    // 13 minutos en ms
-
-// Configuración NTP
+// Configuración NTP (UTC-6 Guatemala)
 const char* ntpServer = "time.google.com";
-const long gmtOffset_sec = 0;
+const long gmtOffset_sec = -21600;   // UTC-6
 const int daylightOffset_sec = 0;
+
+// Estructura de configuración (parámetros ajustables)
+struct Configuracion {
+  uint16_t umbralAlto;      // Voltaje alto (14.1V -> 812)
+  uint16_t umbralBajo;      // Voltaje bajo (11V -> 640)
+  uint8_t  histeresis;      // Histéresis en unidades ADC
+  uint32_t pausaMs;         // Tiempo de pausa en milisegundos
+  uint8_t  horaInicio;      // Hora de inicio de operación (hora local)
+  uint8_t  horaFin;         // Hora de fin de operación (hora local)
+};
+
+Configuracion config;       // Variable global con los valores actuales
+
+// Direcciones EEPROM
+const int EEPROM_SIZE = sizeof(Configuracion);
+const int EEPROM_ADDR = 0;
 
 // Variables de estado
 struct {
@@ -69,7 +80,31 @@ uint16_t totalOperaciones = 0;
 
 ESP8266WebServer server(80);
 
-// Función para formatear tiempo
+// Funciones de configuración EEPROM
+void cargarConfiguracion() {
+  EEPROM.begin(EEPROM_SIZE);
+  EEPROM.get(EEPROM_ADDR, config);
+  // Si la EEPROM está vacía (todos bytes 0xFF), cargar valores por defecto
+  if (config.umbralAlto == 0xFFFF || config.umbralAlto == 0) {
+    config.umbralAlto = 812;
+    config.umbralBajo = 640;
+    config.histeresis = 10;
+    config.pausaMs = 900000;   // 13 minutos
+    config.horaInicio = 12;
+    config.horaFin = 22;
+    guardarConfiguracion();    // Guardar valores por defecto
+  }
+  EEPROM.end();
+}
+
+void guardarConfiguracion() {
+  EEPROM.begin(EEPROM_SIZE);
+  EEPROM.put(EEPROM_ADDR, config);
+  EEPROM.commit();
+  EEPROM.end();
+}
+
+// Funciones auxiliares
 String formatDuration(uint32_t ms) {
   uint32_t seconds = ms / 1000;
   uint32_t minutes = seconds / 60;
@@ -99,7 +134,7 @@ void actualizarOLED() {
   } else if(estado.bombaEncendida) {
     linea1 = "Bomba: ON";
   } else if(estado.enPausa) {
-    uint32_t tiempoRestante = (PAUSA_MS - (millis() - tiempoInicioPausa)) / 1000;
+    uint32_t tiempoRestante = (config.pausaMs - (millis() - tiempoInicioPausa)) / 1000;
     linea1 = "Pausa: " + String(tiempoRestante) + "s";
   } else {
     linea1 = "Cargando...";
@@ -146,8 +181,8 @@ void agregarRegistro(bool encendido, uint32_t duracion = 0) {
 String generarPaginaWeb() {
   String html = "<!DOCTYPE html><html><head>";
   html += "<meta http-equiv='refresh' content='5'>";
-  html += "<meta charset='UTF-8'>";  // 👈 Añade esta línea
-  html += "<title>Control de Carga</title>";
+  html += "<meta charset='UTF-8'>";
+  html += "<title>Control de Carga Solar</title>";
   html += "<style>";
   html += "body { font-family: Arial, sans-serif; margin: 20px; }";
   html += "h1, h2 { color: #444; }";
@@ -157,6 +192,7 @@ String generarPaginaWeb() {
   html += "table { width: 100%; border-collapse: collapse; }";
   html += "th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }";
   html += "tr:hover { background-color: #f5f5f5; }";
+  html += ".formula { font-size: 0.8em; color: #666; margin-top: 5px; }";
   html += "</style></head><body>";
   
   html += "<h1>Control de Carga Solar</h1>";
@@ -167,12 +203,14 @@ String generarPaginaWeb() {
   html += "<p><strong>Modo:</strong> " + String(estado.modoAutomatico ? "Automático" : "Manual") + "</p>";
   html += "<p><strong>Bomba:</strong> <span class='" + String(estado.bombaEncendida ? "on'>ENCENDIDA" : "off'>APAGADA") + "</span></p>";
   html += "<p><strong>Voltaje:</strong> " + String(voltageActual, 2) + "V</p>";
+  html += "<p><strong>ADC RAW:</strong> " + String(rawValue) + "</p>";
+  html += "<div class='formula'><strong>Fórmula de conversión:</strong> Voltaje = ADC × (14.1 / 805.0)</div>";
   
   struct tm timeinfo;
   if(getLocalTime(&timeinfo)) {
     char timeStr[20];
     strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
-    html += "<p><strong>Hora GMT+0:</strong> " + String(timeStr) + "</p>";
+    html += "<p><strong>Hora (Guatemala):</strong> " + String(timeStr) + "</p>";
   }
   
   html += "<p><strong>Tiempo total activado:</strong> " + formatDuration(tiempoTotalEncendido) + "</p>";
@@ -186,6 +224,7 @@ String generarPaginaWeb() {
   html += "<a href='/manual'><button>Modo Manual</button></a><br>";
   html += "<a href='/on'><button>Encender Bomba</button></a>";
   html += "<a href='/off'><button>Apagar Bomba</button></a>";
+  html += "<a href='/config'><button>Configuración</button></a>";
   html += "</div>";
   
   // Panel de registros
@@ -223,6 +262,33 @@ String generarPaginaWeb() {
   return html;
 }
 
+void encenderBomba() {
+  digitalWrite(RELAY_PIN, LOW);
+  estado.bombaEncendida = true;
+  tiempoUltimoEncendido = millis();
+  agregarRegistro(true);
+  agregarLog("Bomba ENCENDIDA");
+}
+
+void apagarBomba() {
+  digitalWrite(RELAY_PIN, HIGH);
+  if(estado.bombaEncendida) {
+    uint32_t duracion = millis() - tiempoUltimoEncendido;
+    tiempoTotalEncendido += duracion;
+    agregarRegistro(false, duracion);
+    agregarLog("Bomba APAGADA");
+  }
+  estado.bombaEncendida = false;
+}
+
+uint16_t leerADCfiltrado() {
+  totalLecturas -= lecturasADC[indiceLectura];
+  lecturasADC[indiceLectura] = analogRead(ADC_PIN);
+  totalLecturas += lecturasADC[indiceLectura];
+  indiceLectura = (indiceLectura + 1) % NUM_LECTURAS;
+  return totalLecturas / NUM_LECTURAS;
+}
+
 void setup() {
   delay(1000);
   Serial.begin(115200);
@@ -235,6 +301,9 @@ void setup() {
   display.display();
   delay(2000);
   display.clearDisplay();
+  
+  // Cargar configuración desde EEPROM
+  cargarConfiguracion();
   
   // Estado inicial
   estado.bombaEncendida = false;
@@ -278,7 +347,7 @@ void setup() {
   
   agregarLog(("IP: " + WiFi.localIP().toString()).c_str());
 
-  // Configurar tiempo
+  // Configurar tiempo (UTC-6 Guatemala)
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   agregarLog("Sinc. hora...");
   
@@ -304,6 +373,99 @@ void setup() {
   server.on("/manual", []() { estado.modoAutomatico = false; agregarLog("Modo manual"); server.sendHeader("Location", "/"); server.send(302, "text/plain", ""); });
   server.on("/on", []() { estado.modoAutomatico = false; encenderBomba(); server.sendHeader("Location", "/"); server.send(302, "text/plain", ""); });
   server.on("/off", []() { estado.modoAutomatico = false; apagarBomba(); server.sendHeader("Location", "/"); server.send(302, "text/plain", ""); });
+  
+  // Página de configuración (GET)
+  server.on("/config", HTTP_GET, []() {
+    String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>";
+    html += "<title>Configuración</title>";
+    html += "<style>";
+    html += "body { font-family: Arial, sans-serif; margin: 20px; }";
+    html += "h2 { color: #444; }";
+    html += ".config-form { border: 1px solid #ddd; padding: 20px; border-radius: 5px; max-width: 500px; }";
+    html += "label { display: inline-block; width: 150px; margin-bottom: 10px; }";
+    html += "input { width: 100px; padding: 5px; margin-bottom: 10px; }";
+    html += "button { background: #4CAF50; color: white; padding: 8px 15px; border: none; border-radius: 4px; margin-top: 10px; }";
+    html += "a { display: inline-block; margin-top: 10px; }";
+    html += ".note { font-size: 0.8em; color: #666; margin-left: 10px; }";
+    html += ".formula { font-size: 0.8em; color: #666; margin-top: 15px; border-top: 1px solid #ddd; padding-top: 10px; }";
+    html += "</style></head><body>";
+    html += "<h2>Configuración de Parámetros</h2>";
+    html += "<div class='config-form'>";
+    html += "<form action='/saveconfig' method='POST'>";
+    
+    // Umbral Alto
+    html += "<label>Umbral Alto (ADC):</label> <input type='number' name='alto' value='" + String(config.umbralAlto) + "'>";
+    float voltajeAlto = config.umbralAlto * (14.1 / 805.0);
+    html += "<span class='note'>≈ " + String(voltajeAlto, 2) + " V</span><br>";
+    
+    // Umbral Bajo
+    html += "<label>Umbral Bajo (ADC):</label> <input type='number' name='bajo' value='" + String(config.umbralBajo) + "'>";
+    float voltajeBajo = config.umbralBajo * (14.1 / 805.0);
+    html += "<span class='note'>≈ " + String(voltajeBajo, 2) + " V</span><br>";
+    
+    // Histéresis
+    html += "<label>Histéresis (ADC):</label> <input type='number' name='histeresis' value='" + String(config.histeresis) + "'><br>";
+    
+    // Pausa (en minutos)
+    html += "<label>Pausa (minutos):</label> <input type='number' name='pausa' value='" + String(config.pausaMs / 60000) + "'><br>";
+    
+    // Hora inicio
+    html += "<label>Hora inicio (local):</label> <input type='number' name='horaInicio' min='0' max='23' value='" + String(config.horaInicio) + "'><br>";
+    
+    // Hora fin
+    html += "<label>Hora fin (local):</label> <input type='number' name='horaFin' min='0' max='23' value='" + String(config.horaFin) + "'><br>";
+    
+    html += "<button type='submit'>Guardar</button>";
+    html += "</form>";
+    html += "<div class='formula'><strong>Fórmula de conversión ADC → Voltaje:</strong> Voltaje = ADC × (14.1 / 805.0)</div>";
+    html += "<a href='/'>Volver al inicio</a>";
+    html += "</div>";
+    
+    // Mostrar hora actual
+    struct tm timeinfo;
+    if(getLocalTime(&timeinfo)) {
+      char timeStr[20];
+      strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
+      html += "<p>Hora actual (Guatemala): " + String(timeStr) + "</p>";
+    }
+    
+    html += "</body></html>";
+    server.send(200, "text/html", html);
+  });
+  
+  // Guardar configuración (POST)
+  server.on("/saveconfig", HTTP_POST, []() {
+    if (server.hasArg("alto") && server.hasArg("bajo") && server.hasArg("histeresis") &&
+        server.hasArg("pausa") && server.hasArg("horaInicio") && server.hasArg("horaFin")) {
+      
+      config.umbralAlto = server.arg("alto").toInt();
+      config.umbralBajo = server.arg("bajo").toInt();
+      config.histeresis = server.arg("histeresis").toInt();
+      config.pausaMs = server.arg("pausa").toInt() * 60000; // convertir minutos a ms
+      config.horaInicio = server.arg("horaInicio").toInt();
+      config.horaFin = server.arg("horaFin").toInt();
+
+      // Validaciones simples
+      if (config.umbralAlto < config.umbralBajo) {
+        uint16_t tmp = config.umbralAlto;
+        config.umbralAlto = config.umbralBajo;
+        config.umbralBajo = tmp;
+      }
+      if (config.horaInicio > 23) config.horaInicio = 0;
+      if (config.horaFin > 23) config.horaFin = 23;
+      if (config.histeresis > 50) config.histeresis = 50;
+      if (config.pausaMs < 60000) config.pausaMs = 60000; // mínimo 1 minuto
+      if (config.pausaMs > 3600000) config.pausaMs = 3600000; // máximo 1 hora
+
+      guardarConfiguracion();
+      agregarLog("Config guardada");
+      server.sendHeader("Location", "/config");
+      server.send(302, "text/plain", "");
+    } else {
+      server.send(400, "text/plain", "Faltan parámetros");
+    }
+  });
+  
   server.begin();
   agregarLog("Servidor iniciado");
 }
@@ -313,7 +475,7 @@ void loop() {
   
   // Leer y procesar ADC
   rawValue = leerADCfiltrado();
-  voltageActual = rawValue * (14.1 / 805.0);
+  voltageActual = rawValue * (14.1 / 805.0); // Calibración específica
 
   // Actualizar OLED cada 5 segundos
   static uint32_t lastUpdate = 0;
@@ -339,54 +501,27 @@ void loop() {
 
   if(estado.modoAutomatico) {    
     if(estado.enPausa) {
-      if(millis() - tiempoInicioPausa >= PAUSA_MS) { // 2 minutos
+      if(millis() - tiempoInicioPausa >= config.pausaMs) {
         estado.enPausa = false;
         agregarLog("Pausa completa");
         
-        if(rawValue >= (UMBRAL_ALTO-HISTERESIS) && horaActual >=12 && horaActual <22) {
+        if(rawValue >= (config.umbralAlto - config.histeresis) && horaActual >= config.horaInicio && horaActual < config.horaFin) {
           encenderBomba();
         }
       }
     } 
     else {
-      if(!estado.bombaEncendida && rawValue >= UMBRAL_ALTO && horaActual >=12 && horaActual <22) {
+      if(!estado.bombaEncendida && rawValue >= config.umbralAlto && horaActual >= config.horaInicio && horaActual < config.horaFin) {
         estado.enPausa = true;
         tiempoInicioPausa = millis();
         agregarLog("Iniciando pausa");
       }
       
-      if(estado.bombaEncendida && (rawValue <= (UMBRAL_BAJO+HISTERESIS) || horaActual <12 || horaActual >=22)) {
+      if(estado.bombaEncendida && (rawValue <= (config.umbralBajo + config.histeresis) || horaActual < config.horaInicio || horaActual >= config.horaFin)) {
         apagarBomba();
       }
     }
   }
 
   delay(1000);
-}
-
-uint16_t leerADCfiltrado() {
-  totalLecturas -= lecturasADC[indiceLectura];
-  lecturasADC[indiceLectura] = analogRead(ADC_PIN);
-  totalLecturas += lecturasADC[indiceLectura];
-  indiceLectura = (indiceLectura + 1) % NUM_LECTURAS;
-  return totalLecturas / NUM_LECTURAS;
-}
-
-void encenderBomba() {
-  digitalWrite(RELAY_PIN, LOW);
-  estado.bombaEncendida = true;
-  tiempoUltimoEncendido = millis();
-  agregarRegistro(true);
-  agregarLog("Bomba ENCENDIDA");
-}
-
-void apagarBomba() {
-  digitalWrite(RELAY_PIN, HIGH);
-  if(estado.bombaEncendida) {
-    uint32_t duracion = millis() - tiempoUltimoEncendido;
-    tiempoTotalEncendido += duracion;
-    agregarRegistro(false, duracion);
-    agregarLog("Bomba APAGADA");
-  }
-  estado.bombaEncendida = false;
 }
